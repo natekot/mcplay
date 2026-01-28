@@ -8,6 +8,8 @@ This guide covers how to integrate the `mcplay` MCP server with VS Code and GitH
 - GitHub Copilot extension installed
 - Python 3.10+
 - `uv` package manager
+- Visual Studio 2022 Professional (for MSBuild)
+- Windows or WSL2
 
 ## Installation
 
@@ -31,22 +33,22 @@ Create `.vscode/mcp.json` in your workspace (or add to an existing one):
 ```json
 {
   "servers": {
-    "c-tools": {
+    "vs-build": {
       "type": "stdio",
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/mcplay", "python", "server.py"]
+      "args": ["run", "--directory", "/path/to/mcplay", "python", "server.py", "C:\\Users\\you\\dev\\myproject"]
     }
   }
 }
 ```
 
-Replace `/path/to/mcplay` with the actual path to this repository.
+Replace `/path/to/mcplay` with the actual path to this repository, and the last argument with your project's repository root directory.
 
 ### Step 2: Start the MCP server
 
 1. Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
 2. Run **MCP: List Servers**
-3. Select `c-tools` and click **Start**
+3. Select `vs-build` and click **Start**
 4. When prompted, confirm you trust the server
 
 ### Step 3: Verify it's working
@@ -54,7 +56,7 @@ Replace `/path/to/mcplay` with the actual path to this repository.
 1. Open GitHub Copilot Chat (click the Copilot icon in the sidebar)
 2. Switch to **Agent Mode** using the dropdown at the top of the chat
 3. Click the **Tools** icon (wrench/hammer) to see available tools
-4. Confirm `check_compilation` appears in the list
+4. Confirm `build_project` appears in the list
 
 You can also verify by:
 - Running **MCP: List Servers** and checking the status shows "Running"
@@ -65,16 +67,16 @@ You can also verify by:
 In Copilot Chat (Agent Mode), try:
 
 ```
-Check if samples/valid.c compiles
+Build MyApp.vcxproj
 ```
 
 Or:
 
 ```
-Use the check_compilation tool on samples/invalid.c
+Use build_project to build MyApp.vcxproj for Win32
 ```
 
-You can also explicitly reference the tool by typing `#check_compilation`.
+You can also explicitly reference the tool by typing `#build_project`.
 
 ## Troubleshooting
 
@@ -94,6 +96,7 @@ Check the output logs:
 Common issues:
 - `uv` not in PATH: Use full path (e.g., `/Users/you/.local/bin/uv`)
 - Python not found: Ensure `uv sync` was run in the mcplay directory
+- `cmd.exe not found`: The server must run on Windows or WSL2
 
 ### "MCP servers in Copilot" policy error
 
@@ -103,14 +106,30 @@ If you're using Copilot Business/Enterprise, your organization admin must enable
 
 | Tool | Description |
 |------|-------------|
-| `check_compilation` | Verify if a C source file compiles using gcc. Returns success status, compiler output, and exit code. |
+| `build_project` | Build a `.vcxproj` project using MSBuild (Debug configuration). Returns success status, build output, and exit code. |
 
-### check_compilation parameters
+### build_project parameters
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `file_path` | string | Yes | - | Path to the C source file |
-| `compiler_flags` | string | No | `-Wall -Wextra` | Compiler flags to pass to gcc |
+| `project_file` | string | Yes | - | Path to the `.vcxproj` file. Relative paths resolve against the repo root. WSL2 paths are converted automatically. |
+| `platform` | string | No | `x64` | Target platform: `x64` or `Win32` |
+
+## CLI Usage
+
+You can also build directly from the command line without the MCP server:
+
+```bash
+# x64/Debug (default)
+python build.py MyApp.vcxproj
+
+# Win32/Debug
+python build.py MyApp.vcxproj -32
+
+# Or via the bat wrapper (Windows)
+vs-build.bat MyApp.vcxproj
+vs-build.bat MyApp.vcxproj -32
+```
 
 ## References
 
