@@ -10,7 +10,22 @@ from mcp.server.fastmcp import FastMCP
 
 from build import build_project as _build_project
 
-mcp = FastMCP("vs-build")
+mcp = FastMCP(
+    "vs-build",
+    instructions=(
+        "This server builds Visual Studio C++ projects using MSBuild. "
+        "The repository root was provided at server startup and all "
+        "relative .vcxproj paths are resolved against it.\n\n"
+        "Typical workflow:\n"
+        "1. Edit C/C++ source files.\n"
+        "2. Call build_project with the relevant .vcxproj file to verify "
+        "the change compiles.\n"
+        "3. If the build fails, examine the 'output' field for compiler "
+        "errors and fix them.\n\n"
+        "The build always uses Debug configuration. "
+        "Use platform='Win32' only when targeting 32-bit."
+    ),
+)
 
 
 def wsl_to_windows_path(path_str: str) -> str:
@@ -55,15 +70,25 @@ def build_project(
     project_file: str,
     platform: str = "x64",
 ) -> dict:
-    """Build a .vcxproj project using MSBuild (Debug configuration).
+    """Build a Visual Studio C++ project (.vcxproj) using MSBuild.
+
+    Use this tool after modifying C/C++ source files to verify the project
+    still compiles. It runs a Debug build and returns the full MSBuild
+    output including any compiler errors or warnings.
 
     Args:
-        project_file: Path to the .vcxproj file. Relative paths are resolved
-            against the repository root. WSL2 paths are converted automatically.
+        project_file: Path to the .vcxproj file (e.g. "MyApp.vcxproj").
+            Relative paths are resolved against the repository root.
+            WSL2-style paths like /mnt/c/... are converted automatically.
         platform: Target platform — "x64" (default) or "Win32".
+            Use "Win32" only when the project specifically targets 32-bit.
 
     Returns:
-        A dict with success, output, and exit_code.
+        A dict with:
+        - success: Whether the build succeeded (bool).
+        - output: Full MSBuild stdout/stderr — contains compiler errors,
+          warnings, and the build summary.
+        - exit_code: MSBuild process exit code (0 = success).
     """
     win_path = PureWindowsPath(wsl_to_windows_path(project_file))
 
