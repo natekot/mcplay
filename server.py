@@ -2,9 +2,12 @@
 """MCP server providing C code compilation verification tools."""
 
 import subprocess
+import sys
 import tempfile
 import os
 from pathlib import Path
+
+IS_WINDOWS = sys.platform == "win32"
 
 from mcp.server.fastmcp import FastMCP
 
@@ -45,17 +48,16 @@ def check_compilation(
             "exit_code": -1,
         }
 
-    # Create a temporary file for the output (we don't need the binary)
-    with tempfile.NamedTemporaryFile(suffix=".o", delete=True) as tmp:
-        # Build the gcc command
-        # -c: compile only (don't link)
-        # -o: output to temp file
+    # Build the gcc command
+    # -c: compile only (don't link)
+    # -o: output to temp file
+    def run_compilation(tmp_name: str) -> dict:
         cmd = ["gcc", "-c"]
 
         if compiler_flags:
             cmd.extend(compiler_flags.split())
 
-        cmd.extend(["-o", tmp.name, str(path)])
+        cmd.extend(["-o", tmp_name, str(path)])
 
         try:
             result = subprocess.run(
@@ -84,6 +86,23 @@ def check_compilation(
                 "output": "gcc not found. Please ensure gcc is installed and in PATH.",
                 "exit_code": -1,
             }
+
+    # Create a temporary file for the output (we don't need the binary)
+    # Windows can't delete open files, so we use delete=False and clean up manually
+    if IS_WINDOWS:
+        tmp = tempfile.NamedTemporaryFile(suffix=".o", delete=False)
+        tmp_name = tmp.name
+        tmp.close()
+        try:
+            return run_compilation(tmp_name)
+        finally:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+    else:
+        with tempfile.NamedTemporaryFile(suffix=".o", delete=True) as tmp:
+            return run_compilation(tmp.name)
 
 
 if __name__ == "__main__":
