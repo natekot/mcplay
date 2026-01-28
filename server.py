@@ -37,12 +37,16 @@ if len(sys.argv) < 2:
     print("Usage: python server.py <repo_directory>", file=sys.stderr)
     sys.exit(1)
 
-_raw_repo = wsl_to_windows_path(sys.argv[1])
-REPO_DIR = PureWindowsPath(_raw_repo)
+_raw_repo = sys.argv[1]
 
-# Validate using a platform-native Path so os.path.isdir works correctly
-if not os.path.isdir(str(Path(_raw_repo))):
-    print(f"Error: repository directory does not exist: {REPO_DIR}", file=sys.stderr)
+# Platform-native path for OS operations (cwd, isdir, temp files)
+REPO_DIR_NATIVE = str(Path(_raw_repo))
+
+# Windows-format path for resolving project file names passed to MSBuild
+REPO_DIR_WIN = PureWindowsPath(wsl_to_windows_path(_raw_repo))
+
+if not os.path.isdir(REPO_DIR_NATIVE):
+    print(f"Error: repository directory does not exist: {_raw_repo}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -64,9 +68,9 @@ def build_project(
     win_path = PureWindowsPath(wsl_to_windows_path(project_file))
 
     if not win_path.is_absolute():
-        win_path = REPO_DIR / win_path
+        win_path = REPO_DIR_WIN / win_path
 
-    return _build_project(str(win_path), platform, str(REPO_DIR))
+    return _build_project(str(win_path), platform, REPO_DIR_NATIVE)
 
 
 if __name__ == "__main__":

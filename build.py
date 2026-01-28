@@ -1,18 +1,34 @@
 """Shared MSBuild build logic for VS C++ projects.
 
 Used by server.py (MCP tool) and vs-build.bat (CLI wrapper).
+Works on both native Windows and WSL2 (via cmd.exe interop).
 """
 
 import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import PureWindowsPath
 
 VSDEVCMD_PATH = (
     r"C:\Program Files\Microsoft Visual Studio\2022\Professional"
     r"\Common7\Tools\VsDevCmd.bat"
 )
+
+
+def _to_windows_path(path_str):
+    """Ensure a path is in Windows format.
+
+    Converts WSL2 /mnt/<drive>/... paths to <DRIVE>:\\...
+    Passes through paths that are already in Windows format.
+    """
+    m = re.match(r"^/mnt/([a-zA-Z])(/.*)?$", path_str)
+    if m:
+        drive = m.group(1).upper()
+        rest = m.group(2) or ""
+        return drive + ":" + rest.replace("/", "\\")
+    return path_str
 
 
 def build_project(
@@ -25,7 +41,9 @@ def build_project(
     Args:
         project_file: Path to the .vcxproj file (Windows-style).
         platform: "x64" or "Win32".
-        repo_dir: Repository root directory (used as cwd and SolutionDir).
+        repo_dir: Repository root directory in platform-native format
+            (POSIX on WSL2, Windows-style on Windows). Used as cwd and
+            converted to Windows format for SolutionDir.
 
     Returns:
         A dict with success, output, and exit_code.
@@ -48,7 +66,7 @@ def build_project(
         }
 
     # Guard against command injection — the path is interpolated into a
-    # cmd /c string, so only allow safe characters.
+    # batch file, so only allow safe characters.
     if not re.fullmatch(r"[A-Za-z0-9_.\-\\/: ]+", project_file):
         return {
             "success": False,
@@ -59,24 +77,28 @@ def build_project(
             "exit_code": -1,
         }
 
-    # SolutionDir: use forward slashes and ensure trailing slash
-    solution_dir = repo_dir.replace("\\", "/")
+    # SolutionDir must be Windows-format with forward slashes + trailing /
+    win_repo = _to_windows_path(repo_dir)
+    solution_dir = win_repo.replace("\\", "/")
     if not solution_dir.endswith("/"):
         solution_dir += "/"
 
-    # Build the cmd /c command chain
-    parts = []
+    # --- Write a temporary .bat file ------------------------------------------
+    # This avoids all cmd.exe / WSL-interop quoting issues: the complex
+    # command syntax lives inside the file, and subprocess only needs to
+    # pass a simple file path.
+    # Batch files use %%V for loop variables (vs %V in cmd /c inline).
+    lines = ["@echo off"]
 
-    # x64 builds need the PYTHON3 env var set
     if platform == "x64":
-        parts.append(
-            'for /f "usebackq delims=" %P in '
-            "(`py -3.11 -c \"import sys; print(sys.executable)\"`)"
-            ' do @set "PYTHON3=%P"'
+        lines.append(
+            'for /f "usebackq delims=" %%P in '
+            '(`py -3.11 -c "import sys; print(sys.executable)"`) '
+            'do @set "PYTHON3=%%P"'
         )
 
-    parts.append(f'call "{VSDEVCMD_PATH}"')
-    parts.append(
+    lines.append(f'call "{VSDEVCMD_PATH}"')
+    lines.append(
         f'msbuild "{project_file}"'
         f" /p:Configuration=Debug"
         f" /p:Platform={platform}"
@@ -84,11 +106,20 @@ def build_project(
         f' /p:SolutionDir="{solution_dir}"'
     )
 
-    cmd_script = " && ".join(parts)
+    bat_content = "\r\n".join(lines) + "\r\n"
 
+    # Create the temp .bat in repo_dir so it sits on a Windows-accessible
+    # filesystem (required for WSL2 when repo_dir is under /mnt/).
+    fd, bat_path = tempfile.mkstemp(suffix=".bat", dir=repo_dir)
     try:
+        with os.fdopen(fd, "w", newline="") as f:
+            f.write(bat_content)
+
+        # cmd.exe needs the Windows-format path to the batch file
+        bat_win_path = _to_windows_path(bat_path)
+
         result = subprocess.run(
-            ["cmd", "/c", cmd_script],
+            ["cmd.exe", "/c", bat_win_path],
             capture_output=True,
             text=True,
             timeout=120,
@@ -110,9 +141,14 @@ def build_project(
     except FileNotFoundError:
         return {
             "success": False,
-            "output": "cmd.exe not found. This tool requires Windows.",
+            "output": "cmd.exe not found. This tool requires Windows or WSL2.",
             "exit_code": -1,
         }
+    finally:
+        try:
+            os.unlink(bat_path)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
