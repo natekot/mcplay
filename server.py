@@ -11,15 +11,17 @@ from mcp.server.fastmcp import FastMCP
 from build import build_project as _build_project
 
 mcp = FastMCP(
-    "vs-build",
+    "dts",
     instructions=(
-        "This server builds Visual Studio C++ projects using MSBuild. "
-        "The repository root was provided at server startup and all "
-        "relative .vcxproj paths are resolved against it.\n\n"
+        "This server builds Visual Studio C++ projects in the DTS "
+        "codebase using MSBuild. The repository root was provided at "
+        "server startup and all relative .vcxproj paths are resolved "
+        "against it.\n\n"
         "Typical workflow:\n"
         "1. Edit C/C++ source files.\n"
         "2. Call build_project with the relevant .vcxproj file to verify "
-        "the change compiles.\n"
+        "the change compiles. The .vcxproj file is almost always in the "
+        "same directory as the source file you edited.\n"
         "3. If the build fails, examine the 'output' field for compiler "
         "errors and fix them.\n\n"
         "The build always uses Debug configuration. "
@@ -80,6 +82,8 @@ def build_project(
         project_file: Path to the .vcxproj file (e.g. "MyApp.vcxproj").
             Relative paths are resolved against the repository root.
             WSL2-style paths like /mnt/c/... are converted automatically.
+            Hint: the .vcxproj is almost always in the same directory as
+            the source file you are editing.
         platform: Target platform — "x64" (default) or "Win32".
             Use "Win32" only when the project specifically targets 32-bit.
 

@@ -33,7 +33,7 @@ Create `.vscode/mcp.json` in your workspace (or add to an existing one):
 ```json
 {
   "servers": {
-    "vs-build": {
+    "dts": {
       "type": "stdio",
       "command": "uv",
       "args": ["run", "--directory", "/path/to/mcplay", "python", "server.py", "C:\\Users\\you\\dev\\myproject"]
@@ -48,7 +48,7 @@ Replace `/path/to/mcplay` with the actual path to this repository, and the last 
 
 1. Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
 2. Run **MCP: List Servers**
-3. Select `vs-build` and click **Start**
+3. Select `dts` and click **Start**
 4. When prompted, confirm you trust the server
 
 ### Step 3: Verify it's working
