@@ -1,109 +1,75 @@
 #!/usr/bin/env python3
-"""MCP server providing C code compilation verification tools."""
+"""MCP server providing Visual Studio MSBuild project build tools."""
 
-import subprocess
+import re
 import sys
-import tempfile
 import os
-from pathlib import Path
-
-IS_WINDOWS = sys.platform == "win32"
+from pathlib import Path, PureWindowsPath
 
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("c-tools")
+from build import build_project as _build_project
+
+mcp = FastMCP("vs-build")
+
+
+def wsl_to_windows_path(path_str: str) -> str:
+    """Convert a WSL2-style path to a Windows-style path.
+
+    Passes through non-WSL2 paths unchanged.
+
+    Examples:
+        /mnt/c/Users/foo  -> C:\\Users\\foo
+        /mnt/d/bar/baz    -> D:\\bar\\baz
+        C:\\Users\\foo     -> C:\\Users\\foo  (unchanged)
+        src/main.c        -> src/main.c      (unchanged)
+    """
+    m = re.match(r"^/mnt/([a-zA-Z])(/.*)?$", path_str)
+    if m:
+        drive = m.group(1).upper()
+        rest = m.group(2) or ""
+        return drive + ":" + rest.replace("/", "\\")
+    return path_str
+
+
+# --- Parse repo directory from CLI ---------------------------------------------------
+if len(sys.argv) < 2:
+    print("Usage: python server.py <repo_directory>", file=sys.stderr)
+    sys.exit(1)
+
+_raw_repo = wsl_to_windows_path(sys.argv[1])
+REPO_DIR = PureWindowsPath(_raw_repo)
+
+# Validate using a platform-native Path so os.path.isdir works correctly
+if not os.path.isdir(str(Path(_raw_repo))):
+    print(f"Error: repository directory does not exist: {REPO_DIR}", file=sys.stderr)
+    sys.exit(1)
 
 
 @mcp.tool()
-def check_compilation(
-    file_path: str,
-    compiler_flags: str = "-Wall -Wextra",
+def build_project(
+    project_file: str,
+    platform: str = "x64",
 ) -> dict:
-    """
-    Check if a C source file compiles successfully using gcc.
+    """Build a .vcxproj project using MSBuild (Debug configuration).
 
     Args:
-        file_path: Path to the C source file to compile.
-        compiler_flags: Optional compiler flags (default: "-Wall -Wextra").
+        project_file: Path to the .vcxproj file. Relative paths are resolved
+            against the repository root. WSL2 paths are converted automatically.
+        platform: Target platform — "x64" (default) or "Win32".
 
     Returns:
-        A dict with:
-        - success: Whether compilation succeeded.
-        - output: Compiler output (stdout and stderr).
-        - exit_code: The compiler's exit code.
+        A dict with success, output, and exit_code.
     """
-    path = Path(file_path)
+    win_path = PureWindowsPath(wsl_to_windows_path(project_file))
 
-    if not path.exists():
-        return {
-            "success": False,
-            "output": f"File not found: {file_path}",
-            "exit_code": -1,
-        }
+    if not win_path.is_absolute():
+        win_path = REPO_DIR / win_path
 
-    if not path.suffix == ".c":
-        return {
-            "success": False,
-            "output": f"Expected .c file, got: {path.suffix}",
-            "exit_code": -1,
-        }
-
-    # Build the gcc command
-    # -c: compile only (don't link)
-    # -o: output to temp file
-    def run_compilation(tmp_name: str) -> dict:
-        cmd = ["gcc", "-c"]
-
-        if compiler_flags:
-            cmd.extend(compiler_flags.split())
-
-        cmd.extend(["-o", tmp_name, str(path)])
-
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-            output = result.stdout + result.stderr
-
-            return {
-                "success": result.returncode == 0,
-                "output": output.strip() if output.strip() else "Compilation successful.",
-                "exit_code": result.returncode,
-            }
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "output": "Compilation timed out after 30 seconds.",
-                "exit_code": -1,
-            }
-        except FileNotFoundError:
-            return {
-                "success": False,
-                "output": "gcc not found. Please ensure gcc is installed and in PATH.",
-                "exit_code": -1,
-            }
-
-    # Create a temporary file for the output (we don't need the binary)
-    # Windows can't delete open files, so we use delete=False and clean up manually
-    if IS_WINDOWS:
-        tmp = tempfile.NamedTemporaryFile(suffix=".o", delete=False)
-        tmp_name = tmp.name
-        tmp.close()
-        try:
-            return run_compilation(tmp_name)
-        finally:
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
-    else:
-        with tempfile.NamedTemporaryFile(suffix=".o", delete=True) as tmp:
-            return run_compilation(tmp.name)
+    return _build_project(str(win_path), platform, str(REPO_DIR))
 
 
 if __name__ == "__main__":
+    # Remove the repo directory argument so FastMCP only sees its own args
+    sys.argv = [sys.argv[0]] + sys.argv[2:]
     mcp.run()
