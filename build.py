@@ -17,13 +17,13 @@ VSDEVCMD_PATH = (
 )
 
 
-def _to_windows_path(path_str):
+def to_windows_path(path_str):
     """Ensure a path is in Windows format.
 
-    Converts WSL2 /mnt/<drive>/... paths to <DRIVE>:\\...
+    Converts WSL2 /mnt/<drive>/... and /<drive>/... paths to <DRIVE>:\\...
     Passes through paths that are already in Windows format.
     """
-    m = re.match(r"^/mnt/([a-zA-Z])(/.*)?$", path_str)
+    m = re.match(r"^(?:/mnt)?/([a-zA-Z])(/.*)?$", path_str)
     if m:
         drive = m.group(1).upper()
         rest = m.group(2) or ""
@@ -78,7 +78,7 @@ def build_project(
         }
 
     # SolutionDir must be Windows-format with forward slashes + trailing /
-    win_repo = _to_windows_path(repo_dir)
+    win_repo = to_windows_path(repo_dir)
     solution_dir = win_repo.replace("\\", "/")
     if not solution_dir.endswith("/"):
         solution_dir += "/"
@@ -116,7 +116,7 @@ def build_project(
             f.write(bat_content)
 
         # cmd.exe needs the Windows-format path to the batch file
-        bat_win_path = _to_windows_path(bat_path)
+        bat_win_path = to_windows_path(bat_path)
 
         result = subprocess.run(
             ["cmd.exe", "/c", bat_win_path],
