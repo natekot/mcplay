@@ -7,6 +7,7 @@ from pathlib import Path, PureWindowsPath
 
 from mcp.server.fastmcp import FastMCP
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "msvc-build", "scripts"))
 from build import build_project as _build_project, to_windows_path
 
 mcp = FastMCP(

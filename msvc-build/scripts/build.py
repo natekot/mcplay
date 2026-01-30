@@ -1,9 +1,14 @@
-"""Shared MSBuild build logic for VS C++ projects.
+"""MSBuild build logic for Visual Studio C++ projects.
 
-Used by server.py (MCP tool) and vs-build.bat (CLI wrapper).
-Works on both native Windows and WSL2 (via cmd.exe interop).
+Standalone script and importable module. Builds .vcxproj files using MSBuild
+via the VS Developer Command Prompt. Works on both native Windows and WSL2
+(via cmd.exe interop).
+
+Usage:
+    python build.py <project.vcxproj> [--repo-dir DIR] [-32]
 """
 
+import argparse
 import os
 import re
 import subprocess
@@ -11,9 +16,10 @@ import sys
 import tempfile
 from pathlib import PureWindowsPath
 
-VSDEVCMD_PATH = (
+VSDEVCMD_PATH = os.environ.get(
+    "VSDEVCMD_PATH",
     r"C:\Program Files\Microsoft Visual Studio\2022\Professional"
-    r"\Common7\Tools\VsDevCmd.bat"
+    r"\Common7\Tools\VsDevCmd.bat",
 )
 
 
@@ -152,14 +158,27 @@ def build_project(
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or not sys.argv[1].endswith(".vcxproj"):
-        print("Usage: python build.py <project.vcxproj> [-32]", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Build a Visual Studio C++ project (.vcxproj) using MSBuild.",
+    )
+    parser.add_argument(
+        "project_file",
+        help="Path to the .vcxproj file to build.",
+    )
+    parser.add_argument(
+        "--repo-dir",
+        default=os.getcwd(),
+        help="Repository root directory (default: current working directory).",
+    )
+    parser.add_argument(
+        "-32",
+        dest="win32",
+        action="store_true",
+        help="Build for Win32 platform instead of x64.",
+    )
+    args = parser.parse_args()
 
-    proj = sys.argv[1]
-    plat = "Win32" if "-32" in sys.argv[2:] else "x64"
-    cwd = os.getcwd()
-
-    result = build_project(proj, platform=plat, repo_dir=cwd)
+    plat = "Win32" if args.win32 else "x64"
+    result = build_project(args.project_file, platform=plat, repo_dir=args.repo_dir)
     print(result["output"])
     sys.exit(result["exit_code"])
